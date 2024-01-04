@@ -32,7 +32,7 @@ def backprojection(sinogram,theta = None, filter = None, output_size=None, inter
         col = sinogram[:, col_idx]
         t = ypr * np.cos(angle) - xpr * np.sin(angle)
 
-        interpolant = interp1d(x, col, kind='cubic',
+        interpolant = interp1d(x, col, kind='linear',
                                 bounds_error=False, fill_value=0)
         reconstructed += interpolant(t)
     
