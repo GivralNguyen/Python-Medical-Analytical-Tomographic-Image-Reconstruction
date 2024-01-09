@@ -17,7 +17,7 @@ class DataGenerator:
         phantom = rescale(phantom, scale=0.64, mode='reflect', channel_axis=None)
         return phantom
 
-    # Load Shepp Logan Phantom
+    # Load Image
     @staticmethod
     def load_image(path):
         phantom =  imageio.imread(path, mode='L')

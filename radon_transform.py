@@ -8,7 +8,25 @@ import matplotlib.pyplot as plt
 # Padding Function
 def padding_radon(image, circle=True, *, preserve_range=False):
     """
-    Eadding for radon transformation
+    Pad the input image for use in the Radon transform.
+
+    Parameters:
+    - image (2D array-like): The input image for the Radon transform.
+    - circle (bool, optional): If True, pads the image to form a square by cropping it to the largest inscribed circle.
+                              If False, pads the image to a square using the diagonal of the image.
+    - preserve_range (bool, optional): If True, the input image is converted to float while preserving its original range.
+                                       If False, the input image is converted to float and normalized to the range [0, 1].
+
+    Returns:
+    - center (int): The center index of the padded image.
+    - padded_image (2D array): The padded image suitable for the Radon transform.
+
+    Raises:
+    - ValueError: If the input image is not 2D or if the padded_image is not a square.
+
+    Notes:
+    - If circle is True, the input image must be zero outside the reconstruction circle. A warning is issued if this condition is not met.
+
     """
     if image.ndim != 2:
         raise ValueError('The input image must be 2-D')
@@ -51,6 +69,21 @@ def padding_radon(image, circle=True, *, preserve_range=False):
     return center, padded_image
 
 def radon(center, padded_image, theta=None):
+    """
+    Compute the Radon transform of the given padded image for the specified projection angles.
+
+    Parameters:
+    - center (int): The center index of the padded image.
+    - padded_image (2D array): The padded image suitable for the Radon transform.
+    - theta (array-like, optional): The projection angles in degrees. If None, a range of 180 angles from 0 to 179 degrees is used.
+
+    Returns:
+    - radon_image (2D array): The Radon transform of the padded image for the specified projection angles.
+
+    Notes:
+    - The Radon transform is a technique used in medical imaging to represent the linear projection integrals of an object.
+
+    """
     if theta is None:
         theta = np.arange(180)
     radon_image = np.zeros((padded_image.shape[0], len(theta)),

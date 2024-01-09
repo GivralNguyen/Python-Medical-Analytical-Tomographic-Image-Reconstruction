@@ -2,8 +2,33 @@ from skimage._shared.utils import convert_to_float
 from scipy.interpolate import interp1d
 import numpy as np
 from scipy.fft import fft, ifft, fftfreq, fftshift
+from filters import _get_fourier_filter
 
 def backprojection(sinogram,theta = None, filter = None, output_size=None, interval=1):
+    """
+    Perform backprojection to reconstruct an image from a sinogram.
+
+    Parameters:
+    - sinogram (numpy.ndarray): Input sinogram data.
+    - theta (numpy.ndarray, optional): Projection angles in degrees. If None, evenly spaced angles between 0 and 180 are used.
+    - filter (str, optional): Filter type to be applied during backprojection. Options: 'ramp', 'shepp-logan', 'cosine', 'hamming', 'hann', None.
+    - output_size (int, optional): Size of the reconstructed image. If None, it is set to floor(sqrt((sinogram.shape[0]) ** 2 / 2.0)).
+    - interval (int, optional): Interval for selecting projection angles.
+
+    Returns:
+    - sinogram (numpy.ndarray): Filtered Sinogram data (Original if Filter is None).
+    - reconstructed (numpy.ndarray): Reconstructed image.
+
+    Notes:
+    - The backprojection is performed using linear interpolation.
+    - Optionally, a filter can be applied to the sinogram before backprojection.
+    - The output size of the reconstructed image is determined based on the input sinogram shape.
+    - The sinogram and reconstructed image are returned.
+
+    Example:
+
+    >>> filtered_sinogram, reconstructed = backprojection(sinogram, theta, filter='ramp', output_size=512)
+    """
     if theta is None:
         theta = np.linspace(0, 180, sinogram.shape[1], endpoint=False)
     
@@ -39,30 +64,3 @@ def backprojection(sinogram,theta = None, filter = None, output_size=None, inter
     return sinogram, reconstructed * np.pi / (2 * len(theta))
 
 
-def _get_fourier_filter(size, filter_name):
-
-    n = np.concatenate((np.arange(1, size / 2 + 1, 2, dtype=int),
-                        np.arange(size / 2 - 1, 0, -2, dtype=int)))
-    f = np.zeros(size)
-    f[0] = 0.25
-    f[1::2] = -1 / (np.pi * n) ** 2
-
-    fourier_filter = 2 * np.real(fft(f))         # ramp filter
-    if filter_name == "ramp":
-        pass
-    elif filter_name == "shepp-logan":
-        # Start from first element to avoid divide by zero
-        omega = np.pi * fftfreq(size)[1:]
-        fourier_filter[1:] *= np.sin(omega) / omega
-    elif filter_name == "cosine":
-        freq = np.linspace(0, np.pi, size, endpoint=False)
-        cosine_filter = fftshift(np.sin(freq))
-        fourier_filter *= cosine_filter
-    elif filter_name == "hamming":
-        fourier_filter *= fftshift(np.hamming(size))
-    elif filter_name == "hann":
-        fourier_filter *= fftshift(np.hanning(size))
-    elif filter_name is None:
-        fourier_filter[:] = 1
-
-    return fourier_filter[:, np.newaxis]
