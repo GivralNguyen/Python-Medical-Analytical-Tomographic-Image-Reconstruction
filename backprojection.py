@@ -52,7 +52,24 @@ def backprojection(sinogram,theta = None, filter = None, output_size=None, inter
     xpr, ypr = np.mgrid[:output_size, :output_size] - radius
     x = np.arange(img_shape) - img_shape // 2
     
+    """
+    for col_idx, angle in zip(range(0, len(theta), interval), np.deg2rad(theta[::interval])):: 
+    This loop iterates over columns of the sinogram with a specified interval of projection angles. 
+    It uses the range function to create a sequence of column indices, and zip pairs these indices with 
+    the corresponding projection angles converted to radians.
 
+    col = sinogram[:, col_idx]: Extracts the column of the sinogram corresponding to the current angle.
+
+    t = ypr * np.cos(angle) - xpr * np.sin(angle): Computes a linear combination of ypr and xpr (presumably 
+    representing pixel coordinates in the reconstructed image) using the cosine and sine of the current projection angle.
+
+    interpolant = interp1d(x, col, kind='linear', bounds_error=False, fill_value=0): Uses interp1d from SciPy to create 
+    a linear interpolation function (interpolant) based on the values in the sinogram column (col) with respect to the coordinates x.
+
+    reconstructed += interpolant(t): Evaluates the interpolation function at the coordinates t and adds the result to the 
+    reconstructed variable. This suggests that the reconstructed image is being built up by 
+    interpolating values from the sinogram at the specified coordinates.
+    """
     for col_idx, angle in zip(range(0, len(theta), interval), np.deg2rad(theta[::interval])):
         col = sinogram[:, col_idx]
         t = ypr * np.cos(angle) - xpr * np.sin(angle)

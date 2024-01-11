@@ -32,8 +32,8 @@ def cone_filter(frequency_spectrum, u, v, window_size=15, angular_weighting=None
     angle = np.angle(np.pi * (u + 1j * v))
 
     # Apodizing lowpass filter
-    std_deviation = 0.25  # Adjust this value as needed
-    A = np.exp(-(u**2 + v**2) / (2 * (std_deviation**2)))
+    # std_deviation = 0.25  # Adjust this value as needed
+    # A = np.exp(-(u**2 + v**2) / (2 * (std_deviation**2)))
     a = 10  # Adjust this value as needed
     A = np.exp(-a * np.sqrt(u**2 + v**2))
     # Windowing function

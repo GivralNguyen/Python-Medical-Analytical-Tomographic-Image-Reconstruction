@@ -88,7 +88,13 @@ def radon(center, padded_image, theta=None):
         theta = np.arange(180)
     radon_image = np.zeros((padded_image.shape[0], len(theta)),
                            dtype=padded_image.dtype)
-
+    """
+    Converts the angle from degrees to radians.
+    Computes the cosine (cos_a) and sine (sin_a) of the angle.
+    Constructs a 3x3 rotation matrix (R) based on the computed cosine and sine values.
+    Applies the rotation matrix to the padded image using the warp function (which is not defined in the provided code snippet).
+    Sum the rotated image along the vertical axis and store the result in the corresponding column of the radon_image array.
+    """
     for i, angle in enumerate(np.deg2rad(theta)):
         cos_a, sin_a = np.cos(angle), np.sin(angle)
         R = np.array([[cos_a, sin_a, -center * (cos_a + sin_a - 1)],
