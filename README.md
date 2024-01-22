@@ -1,7 +1,7 @@
 # Analytical Tomographic Image Reconstruction
 
 Welcome to the Analytical Tomographic Image Reconstruction repository! This collection of Python code provides implementations for various analytical tomographic image reconstruction algorithms. These algorithms play a crucial role in transforming projection data into detailed images, making them valuable tools in medical imaging, materials science, and more.
-
+![Filtered Backprojection](filterbackproj.png)
 ## Code Structure
 
 1. **backprojection.py**
