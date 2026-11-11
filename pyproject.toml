@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tomorecon"
+version = "0.1.0"
+description = "Analytical tomographic image reconstruction: Radon transform, Fourier gridding, filtered backprojection, backproject-filter and convolve-backproject."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "GivralNguyen" }]
+keywords = ["tomography", "computed tomography", "image reconstruction", "radon transform", "filtered backprojection"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.8",
+    "scikit-image>=0.19",
+    "imageio>=2.16",
+]
+
+[project.optional-dependencies]
+notebook = ["matplotlib", "jupyter"]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/GivralNguyen/Python-Medical-Analytical-Tomographic-Image-Reconstruction"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tomorecon"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/tomorecon", "tests", "README.md", "LICENSE", "pyproject.toml"]
