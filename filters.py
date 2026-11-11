@@ -1,55 +1,72 @@
 import numpy as np
-from scipy.fft import fft, fftfreq, fftshift
-from numpy.fft import ifftshift
-def cone_filter(frequency_spectrum, u, v, window_size=15, angular_weighting=None):
+from scipy.fft import fft, ifft, fft2, ifft2, fftfreq, fftshift
+
+
+def _padded_size(size):
+    """Smallest power of two >= 2*size (and >= 64), so FFT-based filtering is a linear convolution."""
+    return max(64, int(2 ** np.ceil(np.log2(2 * size))))
+
+
+def _frequency_window(freq, filter_name):
     """
-    Apply a cone filter to the frequency spectrum of an image.
+    Apodizing window evaluated at frequency `freq` (cycles/sample, |freq| <= 0.5),
+    matching the 1-D windows used in `_get_fourier_filter`. Frequencies beyond Nyquist
+    (corners of a 2-D spectrum) are clamped to the Nyquist value.
+    """
+    f = np.minimum(np.abs(freq), 0.5)
+    if filter_name in ("ramp", None):
+        return np.ones_like(f)
+    if filter_name == "shepp-logan":
+        return np.sinc(f)                       # sin(pi f) / (pi f)
+    if filter_name == "cosine":
+        return np.cos(np.pi * f)
+    if filter_name == "hamming":
+        return 0.54 + 0.46 * np.cos(2 * np.pi * f)
+    if filter_name == "hann":
+        return 0.5 + 0.5 * np.cos(2 * np.pi * f)
+    raise ValueError(f"Unknown filter: {filter_name}")
+
+
+def cone_filter(backprojected, output_size=None, filter_name="ramp"):
+    """
+    Backproject-filter: apply the 2-D cone filter |rho| to an unfiltered backprojection.
+
+    Unfiltered backprojection equals f convolved with 1/r, whose 2-D Fourier transform
+    is F(rho)/|rho|. Multiplying the spectrum of the backprojected image by |rho|
+    (optionally apodized by a window) therefore recovers f.
 
     Parameters:
-    - frequency_spectrum (numpy.ndarray): 2D array representing the frequency spectrum of an image.
-    - u (numpy.ndarray): 2D array representing the x-axis frequencies.
-    - v (numpy.ndarray): 2D array representing the y-axis frequencies.
-    - window_size (int, optional): Size of the apodizing lowpass filter. Default is 15.
-    - angular_weighting (function, optional): Custom angular weighting function. Default is None.
+    - backprojected (numpy.ndarray): Unfiltered backprojection (square). Because the 1/r blur
+      extends outside the object, it should be computed on a grid larger than the desired
+      output (e.g. 2x) and cropped afterwards via `output_size`.
+    - output_size (int, optional): Size of the centred crop returned. Default: full size.
+    - filter_name (str, optional): Apodizing window: 'ramp' (none), 'shepp-logan', 'cosine',
+      'hamming', 'hann'.
 
     Returns:
-    - modified_spectrum (numpy.ndarray): Modified frequency spectrum after applying the cone filter.
-    - reconstructed_image (numpy.ndarray): Reconstructed image from the modified frequency spectrum.
-
-    Notes:
-    - The cone filter is designed to emphasize certain frequencies in the frequency spectrum.
-    - The apodizing lowpass filter and windowing function are applied to the spectrum.
-    - Optionally, a custom angular weighting function can be applied.
-    - The modified frequency spectrum is obtained by multiplying the original spectrum with the filter components.
-    - The reconstructed image is obtained by inverse Fourier transform.
+    - modified_spectrum (numpy.ndarray): Filtered 2-D spectrum, fftshift-ed (DC in the centre) for display.
+    - reconstructed_image (numpy.ndarray): Filtered image, cropped to `output_size`.
 
     Example:
-    >>> image = read_image("example.jpg")
-    >>> frequency_spectrum, u, v = compute_frequency_spectrum(image)
-    >>> modified_spectrum, reconstructed_image = cone_filter(frequency_spectrum, u, v, window_size=15)
+    >>> _, bp = backprojection(sinogram, theta, filter=None, output_size=2 * n)
+    >>> spectrum, image = cone_filter(bp, output_size=n)
     """
-    # Compute angle in radians
-    angle = np.angle(np.pi * (u + 1j * v))
+    M = backprojected.shape[0]
+    if output_size is None:
+        output_size = M
 
-    # Apodizing lowpass filter
-    # std_deviation = 0.25  # Adjust this value as needed
-    # A = np.exp(-(u**2 + v**2) / (2 * (std_deviation**2)))
-    a = 10  # Adjust this value as needed
-    A = np.exp(-a * np.sqrt(u**2 + v**2))
-    # Windowing function
-    w = np.sinc(angle / np.pi)
+    # 2-D frequency grid in cycles/sample, in the same (unshifted) layout as fft2's output
+    u, v = np.meshgrid(fftfreq(M), fftfreq(M))
+    rho = np.hypot(u, v)
+    # factor 2 matches the scaling of the 1-D ramp in `_get_fourier_filter` (2|f|)
+    cone = 2 * rho * _frequency_window(rho, filter_name)
 
-    # Angular weighting function
-    if angular_weighting is not None:
-        w *= angular_weighting(angle)
+    spectrum = fft2(backprojected) * cone
+    image = np.real(ifft2(spectrum))
 
-    # Frequency domain modification
-    modified_spectrum = A * np.sqrt(u**2 + v**2) * w * frequency_spectrum
+    c0 = M // 2 - output_size // 2
+    return fftshift(spectrum), image[c0:c0 + output_size, c0:c0 + output_size]
 
-    # Inverse Fourier transform to get the reconstructed image
-    reconstructed_image = np.real(np.fft.ifft2(modified_spectrum))
-
-    return modified_spectrum, reconstructed_image
 
 def _get_fourier_filter(size, filter_name):
     """
@@ -99,14 +116,32 @@ def _get_fourier_filter(size, filter_name):
 
     return fourier_filter[:, np.newaxis]
 
+
 def _get_inverse_fourier_filter(size, filter_name):
-    # Use the _get_fourier_filter function to get the original filter
-    fourier_filter = _get_fourier_filter(size, filter_name)
-    
-    # Get the frequencies corresponding to each element in the filter
-    freq = fftfreq(size)
-    
-    # Invert the filter in the frequency domain (performing the inverse Fourier transform)
-    inverse_filter = ifftshift(np.fft.ifft(fourier_filter.flatten())).real
-    
-    return inverse_filter[:, np.newaxis]
+    """
+    Spatial-domain convolution kernel equivalent to `_get_fourier_filter` (for Convolve-Backproject).
+
+    The kernel is obtained by inverse-FFT of the filter at the zero-padded size used by
+    `backprojection`, and covers lags -(size-1) ... +(size-1), which is every lag that can
+    occur when convolving a projection of length `size`.
+
+    Returns:
+    - kernel (numpy.ndarray): 1-D kernel of length 2*size-1; lag 0 is at index size-1.
+    """
+    padded_size = _padded_size(size)
+    h = np.real(ifft(_get_fourier_filter(padded_size, filter_name).ravel()))
+    lags = np.arange(-(size - 1), size)
+    return h[lags % padded_size]
+
+
+def convolve_sinogram(sinogram, filter_name):
+    """
+    Filter every projection (column of the sinogram) by spatial convolution with the
+    kernel from `_get_inverse_fourier_filter`. Identical to the FFT filtering in
+    `backprojection(..., filter=filter_name)`, but done in the spatial domain.
+    """
+    size = sinogram.shape[0]
+    kernel = _get_inverse_fourier_filter(size, filter_name)
+    # full convolution has length 3*size-2; output sample i sits at index i + (size-1)
+    return np.stack([np.convolve(sinogram[:, j], kernel)[size - 1:2 * size - 1]
+                     for j in range(sinogram.shape[1])], axis=1)

@@ -1,138 +1,124 @@
 import numpy as np
-from scipy.interpolate import griddata
+from scipy.interpolate import RegularGridInterpolator
 from numpy.fft import fftshift, ifft2, ifftshift
 
-def create_radial_grid(N,theta):
+
+def _frequency_axis(N):
     """
-    Create a radial grid for 2D Fourier Transform based on specified parameters.
+    Angular frequencies of an fftshift-ed length-N FFT: index k <-> (k - N//2) * 2*pi/N.
+    The zero frequency is exactly at index N//2 for both even and odd N.
+    """
+    return (np.arange(N) - N // 2) * (2 * np.pi / N)
+
+
+def create_radial_grid(N, theta):
+    """
+    Create the radial (polar) grid on which the Fourier slices of the projections are sampled.
 
     Parameters:
     - N (int): Length of the Fourier Transform.
-    - theta (numpy.ndarray): Array of angles in degrees for the radial grid.
+    - theta (numpy.ndarray): Projection angles in degrees.
 
     Returns:
-    - theta_grid (numpy.ndarray): 2D array representing the radial angles in radians.
-    - r_grid (numpy.ndarray): 2D array representing the radial coordinates.
-
-    Notes:
-    - The radial grid is created for the 2D Fourier Transform.
-    - The angular values are converted from degrees to radians.
-    - The radial values are defined based on the length of the Fourier Transform.
-    - The resulting grids can be used to evaluate the 2D Fourier Transform.
+    - theta_grid (numpy.ndarray): (N, len(theta)) array of slice angles in radians.
+    - r_grid (numpy.ndarray): (N, len(theta)) array of signed radial frequencies (rad/sample).
 
     Example:
-    >>> N = 256
-    >>> theta = np.arange(0, 180)
-    >>> theta_grid, r_grid = create_radial_grid(N, theta)
+    >>> theta_grid, r_grid = create_radial_grid(256, np.arange(0, 180))
     """
-    if N % 2 == 1:
-        omega_r = np.arange(-N/2, (N+1)/2) * (2 * np.pi / N)  # define x axis of the FFT,
-    else:
-        omega_r = np.arange(-(N-1)/2, (N+1)/2) * (2 * np.pi / N)
+    omega_r = _frequency_axis(N)
+    omega_theta = np.deg2rad(theta)
 
-    omega_theta = theta * np.pi / 180 # angles of the radial grid of FFT in rad
-
-    theta_grid, r_grid = np.meshgrid(omega_theta, omega_r) #create a radial grid for the FFT values that we have
-
+    theta_grid, r_grid = np.meshgrid(omega_theta, omega_r)
     return theta_grid, r_grid
+
 
 def create_cartesian_grid(N):
     """
-    Create a Cartesian grid for 2D Fourier Transform based on specified parameters.
+    Create the Cartesian frequency grid of the 2D Fourier Transform.
 
     Parameters:
     - N (int): Length of the Fourier Transform.
 
     Returns:
-    - omega_grid_x (numpy.ndarray): 2D array representing the x-axis coordinates.
-    - omega_grid_y (numpy.ndarray): 2D array representing the y-axis coordinates.
-
-    Notes:
-    - The Cartesian grid is created for the 2D Fourier Transform.
-    - The resulting grids can be used to evaluate the 2D Fourier Transform.
-    - The x and y coordinates are defined based on the length of the Fourier Transform.
+    - omega_grid_x (numpy.ndarray): (N, N) array, frequency along image columns (varies along axis 1).
+    - omega_grid_y (numpy.ndarray): (N, N) array, frequency along image rows (varies along axis 0).
 
     Example:
-    >>> N = 256
-    >>> omega_grid_x, omega_grid_y = create_cartesian_grid(N)
+    >>> omega_grid_x, omega_grid_y = create_cartesian_grid(256)
     """
-    if N % 2 == 1:
-        omega_xy = np.arange(-N/2, (N+1)/2) * (2 * np.pi / N)  # define x axis of the FFT,
-    else:
-        omega_xy = np.arange(-(N-1)/2, (N+1)/2) * (2 * np.pi / N)
-    omega_grid_x, omega_grid_y = np.meshgrid(omega_xy, omega_xy) 
-
+    omega_xy = _frequency_axis(N)
+    omega_grid_x, omega_grid_y = np.meshgrid(omega_xy, omega_xy)
     return omega_grid_x, omega_grid_y
 
-def radial_to_cartesian_inperpolation(omega_grid_x, omega_grid_y, r_grid, theta_grid, proj_fft):
+
+def radial_to_cartesian_interpolation(omega_grid_x, omega_grid_y, r_grid, theta_grid, proj_fft):
     """
-    Perform radial-to-cartesian interpolation on a 2D Fourier Transform.
+    Interpolate the polar samples of the 2D Fourier Transform (Fourier slice theorem) onto a Cartesian grid.
+
+    Fourier slice convention of `radon` in this repo: the projection at angle theta is
+    p(t) with t = x*cos(theta) - y*sin(theta)  (x = column, y = row), hence
+        P_theta(w) = F(kx = w*cos(theta), ky = -w*sin(theta)).
+
+    Each Cartesian point (kx, ky) is therefore mapped to theta = atan2(-ky, kx) and w = |k|;
+    points with theta < 0 use the symmetry P_{theta+pi}(w) = P_theta(-w).
+    Bilinear interpolation is done on the regular (w, theta) grid, with theta extended to
+    pi so that the 179 deg -> 0 deg wrap-around is interpolated correctly.
 
     Parameters:
-    - omega_grid_x (numpy.ndarray): 2D array representing the x-axis coordinates.
-    - omega_grid_y (numpy.ndarray): 2D array representing the y-axis coordinates.
-    - r_grid (numpy.ndarray): 2D array representing the radial coordinates.
-    - theta_grid (numpy.ndarray): 2D array representing the angular coordinates in radians.
-    - proj_fft (numpy.ndarray): 2D array representing the Fourier Transform coefficients.
+    - omega_grid_x, omega_grid_y (numpy.ndarray): Cartesian grid from `create_cartesian_grid`.
+    - r_grid, theta_grid (numpy.ndarray): Polar grid from `create_radial_grid`.
+    - proj_fft (numpy.ndarray): (N, n_angles) Fourier slices from `FT_1D`. Angles must be
+      ascending and lie in [0, 180) degrees.
 
     Returns:
-    - FFT2_flipped (numpy.ndarray): Result of the radial-to-cartesian interpolation.
-
-    Notes:
-    - The input coordinates are transformed from Cartesian to polar.
-    - Bilinear interpolation is performed using griddata.
-    - The result is reshaped to match the shape of the input coordinates.
-
-    Example:
-    >>> N = 256
-    >>> theta = np.arange(0, 180)
-    >>> theta_grid, r_grid = create_radial_grid(N, theta)
-    >>> omega_grid_x, omega_grid_y = create_cartesian_grid(N)
-    >>> proj_fft = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(image)))  # Example Fourier Transform
-    >>> result = radial_to_cartesian_inperpolation(omega_grid_x, omega_grid_y, r_grid, theta_grid, proj_fft)
+    - FFT2 (numpy.ndarray): (N, N) interpolated 2D spectrum, fftshift-ed (DC at [N//2, N//2]).
     """
-    # MATLAB: FFT2 = interp2(theta_grid,r_grid,proj_fft,coord_th_fft2,coord_r_fft2,'bilinear',(0+1i.*0)); %   
-    coord_th_fft2, coord_r_fft2 = np.angle(omega_grid_x + 1j * omega_grid_y), np.abs(omega_grid_x + 1j * omega_grid_y) #transform cartesian to polar coordinates
+    omega_r = r_grid[:, 0]
+    omega_theta = theta_grid[0, :]
 
-    coord_r_fft2 *= np.sign(coord_th_fft2) #if theta>pi
+    # Periodic extension: the slice at theta = pi is the slice at theta = 0 with w -> -w.
+    # On the grid (k - N//2), w -> -w maps row k to row 2*(N//2) - k.
+    N = proj_fft.shape[0]
+    mirror = (2 * (N // 2) - np.arange(N)) % N
+    slice_pi = proj_fft[mirror, 0]
+    if N % 2 == 0:
+        slice_pi[0] = proj_fft[0, 0]  # -N/2 has no positive partner on the grid; Nyquist, negligible
+    values = np.concatenate([proj_fft, slice_pi[:, None]], axis=1)
+    thetas = np.append(omega_theta, np.pi)
 
-    coord_th_fft2 = coord_th_fft2 + np.pi / 2
-    coord_th_fft2[coord_th_fft2 < 0] += np.pi
+    # Cartesian -> (signed radius, angle in [0, pi])
+    angle = np.arctan2(-omega_grid_y, omega_grid_x)
+    radius = np.hypot(omega_grid_x, omega_grid_y)
+    negative = angle < 0
+    angle[negative] += np.pi
+    radius[negative] *= -1
 
-    points = np.column_stack((r_grid.flatten(), theta_grid.flatten()))
-    values = proj_fft.flatten()
-    # Define points where interpolation is needed
-    points_q = np.column_stack((coord_r_fft2.flatten(), coord_th_fft2.flatten()))
-    # Perform bilinear interpolation
-    FFT2 = griddata(points, values, points_q, method='nearest', fill_value=0+1j*0) #interpolate coefficients that we have to the grid points Fx, Fy
+    interp = RegularGridInterpolator((omega_r, thetas), values, method='linear',
+                                     bounds_error=False, fill_value=0)
+    FFT2 = interp(np.column_stack((radius.ravel(), angle.ravel())))
+    return FFT2.reshape(omega_grid_x.shape)
 
-    # Reshape the result to match the shape of coord_th_fft2 and coord_r_fft2
-    FFT2 = FFT2.reshape(coord_r_fft2.shape, )
-    # FFT2_flipped = np.flipud(FFT2))
-    FFT2_flipped = np.flipud(np.rot90(FFT2, k=3))
-    return FFT2_flipped
 
-def inverse_2D_FT(FFT2):
+# Backwards-compatible alias for the original (misspelt) name
+radial_to_cartesian_inperpolation = radial_to_cartesian_interpolation
+
+
+def inverse_2D_FT(FFT2, output_size=None):
     """
-    Perform the inverse 2D Fourier Transform.
+    Inverse 2D Fourier Transform of an fftshift-ed spectrum, returning a centred image.
 
     Parameters:
-    - FFT2 (numpy.ndarray): 2D array representing the Fourier Transform coefficients.
+    - FFT2 (numpy.ndarray): (N, N) spectrum with DC at [N//2, N//2].
+    - output_size (int, optional): If given, return only the centred output_size x output_size
+      crop (use this when the projections were zero-padded / oversampled in `FT_1D`).
 
     Returns:
-    - I (numpy.ndarray): Result of the inverse 2D Fourier Transform.
-
-    Notes:
-    - The input FFT2 is expected to be in the frequency domain.
-    - The inverse Fourier Transform is applied using ifft2.
-    - The result is shifted back to the spatial domain using ifftshift and fftshift.
-
-    Example:
-    >>> N = 256
-    >>> omega_grid_x, omega_grid_y = create_cartesian_grid(N)
-    >>> proj_fft = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(image)))  # Example Fourier Transform
-    >>> result = inverse_2D_FT(proj_fft)
+    - I (numpy.ndarray): Reconstructed image (real part; the imaginary part is only numerical noise).
     """
-
-    I = ifftshift(ifft2(fftshift(FFT2)))
+    N = FFT2.shape[0]
+    I = np.real(fftshift(ifft2(ifftshift(FFT2))))
+    if output_size is not None:
+        c0 = N // 2 - output_size // 2
+        I = I[c0:c0 + output_size, c0:c0 + output_size]
     return I

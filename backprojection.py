@@ -2,7 +2,7 @@ from skimage._shared.utils import convert_to_float
 from scipy.interpolate import interp1d
 import numpy as np
 from scipy.fft import fft, ifft, fftfreq, fftshift
-from filters import _get_fourier_filter
+from filters import _get_fourier_filter, _padded_size
 
 def backprojection(sinogram,theta = None, filter = None, output_size=None, interval=1):
     """
@@ -42,8 +42,12 @@ def backprojection(sinogram,theta = None, filter = None, output_size=None, inter
     if filter not in filter_types:
         raise ValueError(f"Unknown filter: {filter}")
     if filter is not None:
-        fourier_filter = _get_fourier_filter(img_shape, filter)
-        projection = fft(sinogram, axis=0) * fourier_filter
+        # Zero-pad each projection to >= 2N so the FFT product is a *linear* (not circular)
+        # convolution; otherwise the filter kernel wraps around and biases the result.
+        padded_size = _padded_size(img_shape)
+        padded = np.pad(sinogram, ((0, padded_size - img_shape), (0, 0)), mode='constant')
+        fourier_filter = _get_fourier_filter(padded_size, filter)
+        projection = fft(padded, axis=0) * fourier_filter
         sinogram = np.real(ifft(projection, axis=0)[:img_shape, :])
 
     reconstructed = np.zeros((output_size, output_size),
@@ -70,14 +74,17 @@ def backprojection(sinogram,theta = None, filter = None, output_size=None, inter
     reconstructed variable. This suggests that the reconstructed image is being built up by 
     interpolating values from the sinogram at the specified coordinates.
     """
-    for col_idx, angle in zip(range(0, len(theta), interval), np.deg2rad(theta[::interval])):
+    used_angles = range(0, len(theta), interval)
+    for col_idx, angle in zip(used_angles, np.deg2rad(theta[::interval])):
         col = sinogram[:, col_idx]
         t = ypr * np.cos(angle) - xpr * np.sin(angle)
 
         interpolant = interp1d(x, col, kind='linear',
                                 bounds_error=False, fill_value=0)
         reconstructed += interpolant(t)
-    
-    return sinogram, reconstructed * np.pi / (2 * len(theta))
+
+    # Normalise by the number of angles actually back-projected (not len(theta)),
+    # otherwise sub-sampled reconstructions are `interval` times too dark.
+    return sinogram, reconstructed * np.pi / (2 * len(used_angles))
 
 
