@@ -6,6 +6,14 @@ Welcome to the Analytical Tomographic Image Reconstruction repository! This coll
 
 ## Installation
 
+[![PyPI](https://img.shields.io/pypi/v/tomorecon)](https://pypi.org/project/tomorecon/)
+
+```bash
+pip install tomorecon
+```
+
+Latest development version from GitHub:
+
 ```bash
 pip install git+https://github.com/GivralNguyen/Python-Medical-Analytical-Tomographic-Image-Reconstruction.git
 ```
